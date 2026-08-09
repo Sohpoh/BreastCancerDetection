@@ -17,3 +17,7 @@ dependencies:
       - mlflow
       - azureml-mlflow
       - python-dotenv
+      # For app/server.py (local frontend that proxies to the deployed endpoint)
+      - fastapi
+      - uvicorn
+      - requests
