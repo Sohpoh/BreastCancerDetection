@@ -29,5 +29,4 @@ mlruns/
 .DS_Store
 
 # 
-src/deploy/deploy_endpoint.py
 notebooks/01_data_exploration.ipynb
