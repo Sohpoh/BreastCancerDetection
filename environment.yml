@@ -1,0 +1,19 @@
+name: breast-cancer-detection
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyter
+  - pip
+  - pip:
+      # Azure ML SDK v2 + auth + MLflow tracking are pip-only packages,
+      # not available on conda-forge -- must stay in this pip block.
+      - azure-ai-ml
+      - azure-identity
+      - mlflow
+      - azureml-mlflow
+      - python-dotenv
