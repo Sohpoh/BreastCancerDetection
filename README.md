@@ -17,6 +17,7 @@ src/register/register_model.py       Registers a completed run's model into the 
 src/deploy/score.py                  Custom scoring entry script (init/run) with per-prediction explanations
 src/deploy/deploy_endpoint.py        Deploys a registered model to a managed online endpoint
 scripts/submit_training.py           Submits the training job to Azure ML
+app/server.py, app/index.html        Local browser frontend that calls the deployed endpoint (see below)
 tests/test_train.py, tests/test_score.py  Offline unit tests (no AML calls)
 ```
 
@@ -154,6 +155,36 @@ Expected response shape:
 
 A `{"error": "Missing required feature(s): [...]"}` response means a column
 name or spelling is off — the message lists exactly which are missing.
+
+## Local frontend (`app/`)
+
+A small browser UI for the deployed endpoint — 30 input fields (grouped
+mean/SE/worst) with a **Predict** button, showing the prediction, probability,
+and a bar chart of the top contributing features. A dropdown lets you load 5
+real rows from the training data instead of typing values by hand.
+
+![Local frontend showing the input form and a malignant prediction with per-feature contribution bars](imgs/AppLook.png)
+
+```bash
+python app/server.py
+```
+
+Then open `http://127.0.0.1:8000`. Needs `fastapi`, `uvicorn`, and `requests`
+(already in `environment.yml`; `pip install fastapi uvicorn requests` if
+you're in an existing env that predates this).
+
+**This can't be a hosted page** — a published Artifact runs under a CSP that
+blocks any request to an external host, and a browser calling the Azure
+endpoint directly would hit CORS errors anyway (managed online endpoints
+don't send CORS headers), plus a client-side page would expose the auth key
+to anyone who views source. So `app/server.py` is a tiny local FastAPI server
+that sits in between: the browser only ever talks to `localhost`, and the
+server — the only thing holding the key — makes the real server-to-server
+call to Azure via `requests`. It calls `get_ml_client()` on startup to fetch
+the current scoring URI + key for the endpoint named in `ENDPOINT_NAME` at
+the top of `app/server.py` (update that constant if you deploy under a
+different endpoint name). If the endpoint's been deleted (see
+[Cleanup](#cleanup)), startup will fail fetching it — redeploy first.
 
 ## Cleanup
 

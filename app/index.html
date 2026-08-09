@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Breast Cancer Detection</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --border: #e2e5ea;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --malignant: #dc2626;
+    --benign: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .group {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .group h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .field label { font-size: 13px; color: var(--text); flex: 1; }
+  .field input {
+    width: 110px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: right;
+  }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .actions { margin: 24px 0; display: flex; gap: 12px; align-items: center; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .status { font-size: 13px; color: var(--muted); }
+  #result { margin-top: 8px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .prediction-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 14px;
+    color: white;
+  }
+  .badge.malignant { background: var(--malignant); }
+  .badge.benign { background: var(--benign); }
+  .probability { font-size: 14px; color: var(--muted); }
+  .contrib-title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 8px; }
+  .contrib-row { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+  .contrib-name { flex: 1; }
+  .contrib-bar-track { flex: 1; background: var(--bg); border-radius: 4px; height: 8px; position: relative; overflow: hidden; }
+  .contrib-bar { height: 100%; border-radius: 4px; }
+  .contrib-bar.pos { background: var(--malignant); }
+  .contrib-bar.neg { background: var(--benign); }
+  .contrib-value { width: 56px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .error { color: var(--malignant); font-size: 14px; }
+  .sample-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+  .sample-picker select {
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    background: var(--panel);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Breast Cancer Detection</h1>
+  <p class="subtitle">Enter raw (unscaled) cell nuclei measurements and get a prediction with per-feature explanation.</p>
+
+  <div class="sample-picker">
+    <label for="sample-select">Load a real sample row:</label>
+    <select id="sample-select"></select>
+  </div>
+
+  <form id="form">
+    <div class="groups" id="groups"></div>
+    <div class="actions">
+      <button type="submit" id="submit-btn">Predict</button>
+      <span class="status" id="status"></span>
+    </div>
+  </form>
+
+  <div id="result"></div>
+</div>
+
+<script>
+// Feature groups + defaults -- prefilled with a real row from the Wisconsin
+// Diagnostic dataset (a known-malignant case) so the form is testable
+// immediately without hunting for realistic values.
+const GROUPS = {
+  "Mean": [
+    ["radius_mean", 17.99], ["texture_mean", 10.38], ["perimeter_mean", 122.8], ["area_mean", 1001.0],
+    ["smoothness_mean", 0.1184], ["compactness_mean", 0.2776], ["concavity_mean", 0.3001],
+    ["concave points_mean", 0.1471], ["symmetry_mean", 0.2419], ["fractal_dimension_mean", 0.07871],
+  ],
+  "Standard Error": [
+    ["radius_se", 1.095], ["texture_se", 0.9053], ["perimeter_se", 8.589], ["area_se", 153.4],
+    ["smoothness_se", 0.006399], ["compactness_se", 0.04904], ["concavity_se", 0.05373],
+    ["concave points_se", 0.01587], ["symmetry_se", 0.03003], ["fractal_dimension_se", 0.006193],
+  ],
+  "Worst": [
+    ["radius_worst", 25.38], ["texture_worst", 17.33], ["perimeter_worst", 184.6], ["area_worst", 2019.0],
+    ["smoothness_worst", 0.1622], ["compactness_worst", 0.6656], ["concavity_worst", 0.7119],
+    ["concave points_worst", 0.2654], ["symmetry_worst", 0.4601], ["fractal_dimension_worst", 0.1189],
+  ],
+};
+
+// Flat feature order matching the CSV column order (mean, se, worst) -- used
+// to line up SAMPLES rows below with the right input field.
+const FEATURE_NAMES = Object.values(GROUPS).flat().map(([name]) => name);
+
+// Real rows from the training data (id, diagnosis, 30 feature values in
+// FEATURE_NAMES order) so the form can be tested against actual patients
+// instead of made-up numbers.
+const SAMPLES = [
+  { id: 842302, diagnosis: "M", values: [17.99,10.38,122.8,1001,0.1184,0.2776,0.3001,0.1471,0.2419,0.07871, 1.095,0.9053,8.589,153.4,0.006399,0.04904,0.05373,0.01587,0.03003,0.006193, 25.38,17.33,184.6,2019,0.1622,0.6656,0.7119,0.2654,0.4601,0.1189] },
+  { id: 842517, diagnosis: "M", values: [20.57,17.77,132.9,1326,0.08474,0.07864,0.0869,0.07017,0.1812,0.05667, 0.5435,0.7339,3.398,74.08,0.005225,0.01308,0.0186,0.0134,0.01389,0.003532, 24.99,23.41,158.8,1956,0.1238,0.1866,0.2416,0.186,0.275,0.08902] },
+  { id: 84300903, diagnosis: "M", values: [19.69,21.25,130,1203,0.1096,0.1599,0.1974,0.1279,0.2069,0.05999, 0.7456,0.7869,4.585,94.03,0.00615,0.04006,0.03832,0.02058,0.0225,0.004571, 23.57,25.53,152.5,1709,0.1444,0.4245,0.4504,0.243,0.3613,0.08758] },
+  { id: 84348301, diagnosis: "M", values: [11.42,20.38,77.58,386.1,0.1425,0.2839,0.2414,0.1052,0.2597,0.09744, 0.4956,1.156,3.445,27.23,0.00911,0.07458,0.05661,0.01867,0.05963,0.009208, 14.91,26.5,98.87,567.7,0.2098,0.8663,0.6869,0.2575,0.6638,0.173] },
+  { id: 84358402, diagnosis: "M", values: [20.29,14.34,135.1,1297,0.1003,0.1328,0.198,0.1043,0.1809,0.05883, 0.7572,0.7813,5.438,94.44,0.01149,0.02461,0.05688,0.01885,0.01756,0.005115, 22.54,16.67,152.2,1575,0.1374,0.205,0.4,0.1625,0.2364,0.07678] },
+];
+
+const groupsEl = document.getElementById("groups");
+for (const [groupName, fields] of Object.entries(GROUPS)) {
+  const groupEl = document.createElement("div");
+  groupEl.className = "group";
+  const heading = document.createElement("h2");
+  heading.textContent = groupName;
+  groupEl.appendChild(heading);
+  for (const [name, defaultValue] of fields) {
+    const field = document.createElement("div");
+    field.className = "field";
+    const label = document.createElement("label");
+    label.textContent = name;
+    label.htmlFor = name;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.id = name;
+    input.name = name;
+    input.value = defaultValue;
+    input.required = true;
+    field.appendChild(label);
+    field.appendChild(input);
+    groupEl.appendChild(field);
+  }
+  groupsEl.appendChild(groupEl);
+}
+
+const sampleSelect = document.getElementById("sample-select");
+SAMPLES.forEach((sample, i) => {
+  const option = document.createElement("option");
+  option.value = i;
+  option.textContent = `Sample ${i + 1} — id ${sample.id} (${sample.diagnosis})`;
+  sampleSelect.appendChild(option);
+});
+sampleSelect.addEventListener("change", () => loadSample(parseInt(sampleSelect.value)));
+
+function loadSample(index) {
+  const sample = SAMPLES[index];
+  FEATURE_NAMES.forEach((name, i) => {
+    document.getElementById(name).value = sample.values[i];
+  });
+}
+loadSample(0); // prefill with Sample 1 on load
+
+const form = document.getElementById("form");
+const submitBtn = document.getElementById("submit-btn");
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const record = {};
+  for (const group of Object.values(GROUPS)) {
+    for (const [name] of group) {
+      record[name] = parseFloat(document.getElementById(name).value);
+    }
+  }
+
+  submitBtn.disabled = true;
+  statusEl.textContent = "Scoring...";
+  resultEl.innerHTML = "";
+
+  try {
+    const res = await fetch("/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || data.error || "Request failed");
+    }
+    renderResult(data);
+    statusEl.textContent = "";
+  } catch (err) {
+    resultEl.innerHTML = `<div class="card"><div class="error">${err.message}</div></div>`;
+    statusEl.textContent = "";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+function renderResult(data) {
+  const isMalignant = data.prediction === "malignant";
+  const maxAbs = Math.max(...data.top_contributing_features.map(f => Math.abs(f.contribution)), 0.0001);
+
+  const rows = data.top_contributing_features.map(f => {
+    const pct = Math.min(100, Math.abs(f.contribution) / maxAbs * 100);
+    const dir = f.contribution >= 0 ? "pos" : "neg";
+    return `
+      <div class="contrib-row">
+        <div class="contrib-name">${f.feature}</div>
+        <div class="contrib-bar-track"><div class="contrib-bar ${dir}" style="width:${pct}%"></div></div>
+        <div class="contrib-value">${f.contribution.toFixed(3)}</div>
+      </div>`;
+  }).join("");
+
+  resultEl.innerHTML = `
+    <div class="card">
+      <div class="prediction-row">
+        <span class="badge ${isMalignant ? "malignant" : "benign"}">${data.prediction}</span>
+        <span class="probability">probability: ${(data.probability * 100).toFixed(1)}%</span>
+      </div>
+      <div class="contrib-title">Top contributing features (red = toward malignant, green = toward benign)</div>
+      ${rows}
+    </div>`;
+}
+</script>
+</body>
+</html>
