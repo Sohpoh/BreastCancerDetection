@@ -40,19 +40,22 @@ def test_prepare_features_encodes_diagnosis_and_splits_target():
     assert set(y.unique()) <= {0, 1}
 
 
-def test_train_and_evaluate_returns_fitted_model_and_expected_metrics():
+def test_train_and_evaluate_returns_fitted_pipeline_and_expected_metrics():
     df = _make_synthetic_df()
     X, y = prepare_features(df)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.25, random_state=42, stratify=y
     )
 
-    clf, scaler, metrics = train_and_evaluate(
+    pipeline, metrics = train_and_evaluate(
         X_train, X_test, y_train, y_test, C=1.0, max_iter=200
     )
 
-    assert hasattr(clf, "predict")
-    assert hasattr(scaler, "transform")
+    # Scaler and classifier are bundled into one Pipeline so predict() works
+    # directly on raw, unscaled feature values -- exactly how a deployed
+    # endpoint would call it.
+    assert set(pipeline.named_steps) == {"scaler", "clf"}
+    pipeline.predict(X_test.iloc[:5])  # raw (unscaled) input, no separate transform step
     for key in ["test_accuracy", "test_precision", "test_recall", "test_f1_score"]:
         assert key in metrics
         assert 0.0 <= metrics[key] <= 1.0
