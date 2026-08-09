@@ -1,0 +1,24 @@
+# Conda spec for the custom scoring environment used by the online
+# deployment (see scripts/deploy_endpoint.py). Mirrors the versions in the
+# aml-cancer-detect training environment on purpose: a pickled sklearn
+# Pipeline can fail to unpickle (or silently behave differently) if loaded
+# under a different scikit-learn version than it was trained with.
+name: score-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8
+  - numpy=1.21.2
+  - scikit-learn=1.0.2
+  - scipy=1.7.1
+  - pandas>=1.1,<1.2
+  - pip=21.2.4
+  - pip:
+      - mlflow==2.8.0
+      - mlflow-skinny==2.8.0
+      - azureml-mlflow==1.51.0
+      # Required for any custom score.py deployment -- this is the HTTP
+      # server that actually runs init()/run() inside the container. Without
+      # it the container exits immediately with "A required package
+      # azureml-inference-server-http is missing."
+      - azureml-inference-server-http

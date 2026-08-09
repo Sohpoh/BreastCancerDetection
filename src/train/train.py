@@ -28,6 +28,11 @@ from __future__ import annotations
 
 import argparse
 
+import matplotlib
+
+matplotlib.use("Agg")  # headless backend -- no display available on AML compute
+
+import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import pandas as pd
@@ -117,6 +122,32 @@ def train_and_evaluate(
     return pipeline, metrics
 
 
+def log_feature_importance(pipeline: Pipeline, feature_names: list[str]) -> None:
+    """Log ranked coefficients (global feature importance) as MLflow artifacts.
+
+    Coefficients are directly comparable across features because the
+    classifier sits after a StandardScaler in the pipeline -- every feature
+    is on the same standardized scale, so abs(coefficient) ranks true
+    influence on the prediction, not just raw feature magnitude. Positive
+    coefficients push toward malignant (target=1); negative push toward
+    benign. This is the same math score.py uses to explain individual
+    predictions (see src/deploy/score.py::compute_explanation), just
+    aggregated across the whole model instead of one request.
+    """
+    coef = pipeline.named_steps["clf"].coef_[0]
+    importance = pd.Series(coef, index=feature_names).sort_values(key=abs, ascending=False)
+
+    mlflow.log_dict(importance.round(4).to_dict(), "feature_importance.json")
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    importance.head(15).sort_values().plot(kind="barh", ax=ax)
+    ax.set_xlabel("Standardized coefficient (log-odds toward malignant)")
+    ax.set_title("Top 15 features by influence")
+    fig.tight_layout()
+    mlflow.log_figure(fig, "feature_importance.png")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str, help="path to input data")
@@ -159,6 +190,8 @@ def main() -> None:
     # registered here.
     print(f"Logging model to run artifact path '{MODEL_ARTIFACT_PATH}/'")
     mlflow.sklearn.log_model(sk_model=pipeline, artifact_path=MODEL_ARTIFACT_PATH)
+
+    log_feature_importance(pipeline, list(X.columns))
 
     run_id = mlflow.active_run().info.run_id
     print(f"Done. Run id: {run_id}")
