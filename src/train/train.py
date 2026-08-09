@@ -15,6 +15,12 @@ separate, explicit step: run `src/register/register_model.py --job_name
 Keeping training and registration separate means you can inspect a run's
 metrics in the studio before deciding whether it's worth registering.
 
+The scaler and classifier are bundled into a single sklearn Pipeline before
+logging (not logged separately) so scaling happens automatically inside the
+deployed model -- a deployment endpoint can be called with raw, unscaled
+feature values instead of needing the client to replicate the exact
+StandardScaler fit from training.
+
 The data-loading/training/eval logic is split into small functions kept free
 of argparse so it's directly unit-testable (see `tests/test_train.py`).
 """
@@ -35,6 +41,7 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 TARGET_COL = "diagnosis"
@@ -70,22 +77,31 @@ def train_and_evaluate(
     y_test: pd.Series,
     C: float = 1.0,
     max_iter: int = 1000,
-) -> tuple[LogisticRegression, StandardScaler, dict]:
-    """Scale features, fit a LogisticRegression, return (model, scaler, metrics).
+) -> tuple[Pipeline, dict]:
+    """Fit a StandardScaler + LogisticRegression pipeline, return (pipeline, metrics).
+
+    Scaler and classifier are bundled into one Pipeline (rather than fit and
+    logged separately) so the fitted scaling is baked into the model object
+    itself -- `pipeline.predict(raw_X)` scales internally, so callers (e.g. a
+    deployed endpoint) never need to replicate the training-time scaling.
 
     class_weight="balanced" optimizes for high recall (minimizing false
     negatives), which matters more than raw accuracy for cancer detection.
     """
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    clf = LogisticRegression(
-        C=C, max_iter=max_iter, class_weight="balanced", random_state=42
+    pipeline = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "clf",
+                LogisticRegression(
+                    C=C, max_iter=max_iter, class_weight="balanced", random_state=42
+                ),
+            ),
+        ]
     )
-    clf.fit(X_train_scaled, y_train)
+    pipeline.fit(X_train, y_train)
 
-    y_pred = clf.predict(X_test_scaled)
+    y_pred = pipeline.predict(X_test)
     metrics = {
         "test_accuracy": accuracy_score(y_test, y_pred),
         "test_precision": precision_score(y_test, y_pred),
@@ -98,7 +114,7 @@ def train_and_evaluate(
     print("--- Confusion Matrix ---")
     print(confusion_matrix(y_test, y_pred))
 
-    return clf, scaler, metrics
+    return pipeline, metrics
 
 
 def main() -> None:
@@ -134,14 +150,15 @@ def main() -> None:
 
     print(f"Training with data of shape {X_train.shape}")
 
-    clf, scaler, metrics = train_and_evaluate(
+    pipeline, metrics = train_and_evaluate(
         X_train, X_test, y_train, y_test, C=args.C, max_iter=args.max_iter
     )
     mlflow.log_metrics(metrics)
 
-    # Log the model as a run artifact only -- NOT registered here.
+    # Log the scaler+classifier pipeline as a run artifact only -- NOT
+    # registered here.
     print(f"Logging model to run artifact path '{MODEL_ARTIFACT_PATH}/'")
-    mlflow.sklearn.log_model(sk_model=clf, artifact_path=MODEL_ARTIFACT_PATH)
+    mlflow.sklearn.log_model(sk_model=pipeline, artifact_path=MODEL_ARTIFACT_PATH)
 
     run_id = mlflow.active_run().info.run_id
     print(f"Done. Run id: {run_id}")
