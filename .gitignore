@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# Environments
+.env
+.venv/
+env/
+venv/
+.conda/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test artifacts
+.pytest_cache/
+
+# AML / MLflow local artifacts
+outputs/
+mlruns/
+.azureml/
+
+# OS
+.DS_Store
+
+# 
+src/deploy/deploy_endpoint.py
+notebooks/01_data_exploration.ipynb

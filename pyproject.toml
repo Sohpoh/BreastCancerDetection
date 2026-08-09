@@ -1,0 +1,12 @@
+[project]
+name = "breast-cancer-detection"
+version = "0.1.0"
+description = "Azure ML project: data analysis, training, registration, and deployment for a breast cancer detection model."
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["src", "src.common", "src.train", "src.register", "src.deploy", "scripts"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

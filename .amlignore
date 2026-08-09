@@ -1,0 +1,16 @@
+# Excludes these from the snapshot AML uploads when a job is submitted.
+# Keep this list tight -- anything not needed to *run* the job shouldn't be
+# uploaded (it slows down submission and can leak local/secret files).
+notebooks/
+tests/
+.env
+.env.example
+.git/
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.ipynb_checkpoints
+outputs/
+mlruns/
+README.md
